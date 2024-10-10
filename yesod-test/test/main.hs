@@ -50,7 +50,7 @@ import qualified Data.Text as T
 import qualified Data.ByteString.Char8 as B8
 import Yesod.Test.Internal (contentTypeHeaderIsUtf8)
 
-import Data.Text.Read (decimal)
+import Text.Read (readMaybe)
 import Debug.Trace (trace) 
 
 parseQuery_ :: Text -> [[SelectorGroup]]
@@ -832,9 +832,9 @@ tupleField = Field parse view UrlEncoded
   where
   parse :: [Text] -> [FileInfo] -> (HandlerFor RoutedApp) (Either (SomeMessage (HandlerSite (HandlerFor RoutedApp))) (Maybe (Int, Text)))
   parse rawVals@[someNumber, someText] _fileVals = trace (show rawVals) $ 
-    case decimal someNumber of
-      Left xs -> pure $ Right Nothing
-      Right (n, _) -> pure $ Right $ Just (n, someText)
+    case readMaybe (T.unpack someNumber)::Maybe Int of
+      Nothing -> pure $ Right Nothing
+      Just n -> pure $ Right $ Just (n, someText)
   parse rawVals _ = trace (show rawVals) $ pure $ Right Nothing
 
   view theId name attrs _eVal isReq =
