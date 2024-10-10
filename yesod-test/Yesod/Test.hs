@@ -841,7 +841,8 @@ addPostParam name value =
   modifySIO $ \rbd -> rbd { rbdPostData = (addPostData (rbdPostData rbd)) }
   where addPostData (BinaryPostData _) = error "Trying to add post param to binary content."
         addPostData (MultipleItemsPostData posts) =
-          MultipleItemsPostData $ ReqKvPart name value : posts
+          -- See: https://github.com/yesodweb/yesod/issues/1846
+          MultipleItemsPostData $ posts <> [ReqKvPart name value]  
 
 -- | Add a parameter with the given name and value to the query string.
 --
