@@ -50,6 +50,9 @@ import qualified Data.Text as T
 import qualified Data.ByteString.Char8 as B8
 import Yesod.Test.Internal (contentTypeHeaderIsUtf8)
 
+import Data.Text.Read (decimal)
+import Debug.Trace (trace) 
+
 parseQuery_ :: Text -> [[SelectorGroup]]
 parseQuery_ = either error id . parseQuery
 
@@ -66,6 +69,8 @@ mkYesod "RoutedApp" [parseRoutes|
 /resources       ResourcesR POST
 /resources/#Text ResourceR  GET
 /get-integer     IntegerR   GET
+/tuple-field     TupleR     POST
+/tuple-display   DisplayR   GET
 |]
 
 main :: IO ()
@@ -329,7 +334,7 @@ main = hspec $ do
                     checkByLabel "Red"
                     checkByLabel "Gray"
                     addToken
-                bodyContains "colorCheckBoxes = [Gray,Red]"
+                bodyContains "colorCheckBoxes = [Red,Gray]" -- Changes for https://github.com/yesodweb/yesod/issues/1846 affects checkByLabel function, too. Reversed here from [Gray,Red]
             yit "can select from select list" $ do
                 get ("/labels-select" :: Text)
                 request $ do
@@ -575,7 +580,53 @@ main = hspec $ do
             statusIs 200
             (requireJSONResponse :: YesodExample site [Text]) `liftedShouldThrow` (\(e :: SomeException) -> True)
 
+    describe "Checks the order of addPostParam arguments addition" $ yesodSpec defaultRoutedApp $ do
+        yit "Creates a form with a tupleField" $ do
+            get DisplayR
+
+            request $ do
+              addTokenFromCookie
+              setUrl TupleR
+              setMethod "POST"
+              addPostParam "data" "ABC"
+              addPostParam "data" "ABC"
+            statusIs 200
+
+        yit "The order of addPostParam addition should be the same as in the browser" $ do  -- See: https://github.com/yesodweb/yesod/issues/1846
+            get DisplayR
+
+            request $ do
+              addTokenFromCookie
+              setUrl TupleR
+              setMethod "POST"
+              addPostParam "data" "100"
+              addPostParam "data" "ABC"
+            loc <- getLocation
+            printBody
+            statusIs 200
+
+        yit "If the order of addPostParam addition is not the same as in the browser it should throuw an error" $ do  -- See: https://github.com/yesodweb/yesod/issues/1846
+            get DisplayR
+
+            request $ do
+              addTokenFromCookie
+              setUrl TupleR
+              setMethod "POST"
+              addPostParam "data" "ABC"
+              addPostParam "data" "100"
+            loc <- getLocation
+            printBody
+            statusIs 200
+
+--tupleField 
+--  :: MonadHandler m
+--  => ExampleYesodTupleField (HandlerSite m)
+--  => Field m (Int, Text)
+
 instance RenderMessage LiteApp FormMessage where
+    renderMessage _ _ = defaultFormMessage
+
+instance RenderMessage RoutedApp FormMessage where
     renderMessage _ _ = defaultFormMessage
 
 app :: LiteApp
@@ -776,6 +827,61 @@ getIntegerR = do
     app <- getYesod
     pure $ T.pack $ show (routedAppInteger app)
 
+data TupleField = TupleField
+    { tupleIntText      :: (Int, Text)
+    }
+  deriving Show
+
+tupleField = Field parse view UrlEncoded
+  where
+  parse :: [Text] -> [FileInfo] -> (HandlerFor RoutedApp) (Either (SomeMessage (HandlerSite (HandlerFor RoutedApp))) (Maybe (Int, Text)))
+  parse rawVals@[someNumber, someText] _fileVals = trace (show rawVals) $ 
+    case decimal someNumber of
+      Left xs -> pure $ Right Nothing
+      Right (n, _) -> pure $ Right $ Just (n, someText)
+  parse rawVals _ = trace (show rawVals) $ pure $ Right Nothing
+
+  view theId name attrs _eVal isReq =
+{-    case _eVal of
+      Left xs -> do [whamlet|
+                      <p>xs|]
+      Right (n, ys::Text) -> do [whamlet|
+        <p>#{pack (show n) <> (" " <> ys)}
+      |] 
+-}
+    [whamlet|
+      <input name=#{name}>
+      <input name=#{name}>
+    |]
+
+tupleForm :: Html -> MForm Handler (FormResult TupleField, Widget)
+tupleForm = renderDivs $ TupleField
+    <$> areq tupleField "Data in two inputs" Nothing
+
+-- The GET handler displays the form
+getDisplayR :: Handler Html
+getDisplayR = do
+    -- Generate the form to be displayed
+    (widget, enctype) <- generateFormPost tupleForm
+    defaultLayout
+        [whamlet|
+            <form method=post action=@{TupleR} enctype=#{enctype}>
+                ^{widget}
+                <button>Submit
+        |]
+
+postTupleR :: Handler Html
+postTupleR = do
+    ((result, widget), enctype) <- runFormPost tupleForm
+    case result of
+        FormSuccess tupleValue -> defaultLayout [whamlet|<p>#{show tupleValue}|]
+        _ -> defaultLayout
+            [whamlet|
+                <p>Invalid input, let's try again.
+                <form method=post action=@{TupleR} enctype=#{enctype}>
+                    ^{widget}
+                    <button>Submit
+            |]
 
 -- infix Copied from HSpec's version
 infix 1 `liftedShouldThrow`
