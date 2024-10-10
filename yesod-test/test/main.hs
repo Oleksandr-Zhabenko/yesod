@@ -590,7 +590,7 @@ main = hspec $ do
               setMethod "POST"
               addPostParam "data" "ABC"
               addPostParam "data" "ABC"
-            statusIs 200
+            statusIs 400
 
         yit "The order of addPostParam addition should be the same as in the browser" $ do  -- See: https://github.com/yesodweb/yesod/issues/1846
             get DisplayR
@@ -601,9 +601,7 @@ main = hspec $ do
               setMethod "POST"
               addPostParam "data" "100"
               addPostParam "data" "ABC"
-            loc <- getLocation
-            printBody
-            statusIs 200
+            statusIs 400
 
         yit "If the order of addPostParam addition is not the same as in the browser it should throuw an error" $ do  -- See: https://github.com/yesodweb/yesod/issues/1846
             get DisplayR
@@ -614,9 +612,7 @@ main = hspec $ do
               setMethod "POST"
               addPostParam "data" "ABC"
               addPostParam "data" "100"
-            loc <- getLocation
-            printBody
-            statusIs 200
+            statusIs 400
 
 --tupleField 
 --  :: MonadHandler m
@@ -875,13 +871,16 @@ postTupleR = do
     ((result, widget), enctype) <- runFormPost tupleForm
     case result of
         FormSuccess tupleValue -> defaultLayout [whamlet|<p>#{show tupleValue}|]
-        _ -> defaultLayout
-            [whamlet|
-                <p>Invalid input, let's try again.
+        FormFailure errors ->
+           invalidArgs errors
+        FormMissing ->
+           defaultLayout
+             [whamlet|
+                <p>Form is missing, let's try again.
                 <form method=post action=@{TupleR} enctype=#{enctype}>
                     ^{widget}
                     <button>Submit
-            |]
+             |]
 
 -- infix Copied from HSpec's version
 infix 1 `liftedShouldThrow`
