@@ -69,8 +69,7 @@ mkYesod "RoutedApp" [parseRoutes|
 /resources       ResourcesR POST
 /resources/#Text ResourceR  GET
 /get-integer     IntegerR   GET
-/tuple-field     TupleR     POST
-/tuple-display   DisplayR   GET
+/tuple-field     TupleR     GET POST
 |]
 
 main :: IO ()
@@ -582,7 +581,7 @@ main = hspec $ do
 
     describe "Checks the order of addPostParam arguments addition" $ yesodSpec defaultRoutedApp $ do
         yit "Creates a form with a tupleField" $ do
-            get DisplayR
+            get TupleR
 
             request $ do
               addTokenFromCookie
@@ -593,7 +592,7 @@ main = hspec $ do
             statusIs 400
 
         yit "The order of addPostParam addition should be the same as in the browser" $ do  -- See: https://github.com/yesodweb/yesod/issues/1846
-            get DisplayR
+            get TupleR
 
             request $ do
               addTokenFromCookie
@@ -604,7 +603,7 @@ main = hspec $ do
             statusIs 400
 
         yit "If the order of addPostParam addition is not the same as in the browser it should throuw an error" $ do  -- See: https://github.com/yesodweb/yesod/issues/1846
-            get DisplayR
+            get TupleR
 
             request $ do
               addTokenFromCookie
@@ -855,8 +854,8 @@ tupleForm = renderDivs $ TupleField
     <$> areq tupleField "Data in two inputs" Nothing
 
 -- The GET handler displays the form
-getDisplayR :: Handler Html
-getDisplayR = do
+getTupleR :: Handler Html
+getTupleR = do
     -- Generate the form to be displayed
     (widget, enctype) <- generateFormPost tupleForm
     defaultLayout
