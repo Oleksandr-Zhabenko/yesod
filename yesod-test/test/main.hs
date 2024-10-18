@@ -50,6 +50,8 @@ import qualified Data.Text as T
 import qualified Data.ByteString.Char8 as B8
 import Yesod.Test.Internal (contentTypeHeaderIsUtf8)
 
+import Text.Read (readMaybe)
+
 parseQuery_ :: Text -> [[SelectorGroup]]
 parseQuery_ = either error id . parseQuery
 
@@ -66,6 +68,7 @@ mkYesod "RoutedApp" [parseRoutes|
 /resources       ResourcesR POST
 /resources/#Text ResourceR  GET
 /get-integer     IntegerR   GET
+/tuple-field     TupleR     GET POST
 |]
 
 main :: IO ()
@@ -329,7 +332,7 @@ main = hspec $ do
                     checkByLabel "Red"
                     checkByLabel "Gray"
                     addToken
-                bodyContains "colorCheckBoxes = [Gray,Red]"
+                bodyContains "colorCheckBoxes = [Red,Gray]"
             yit "can select from select list" $ do
                 get ("/labels-select" :: Text)
                 request $ do
@@ -575,7 +578,35 @@ main = hspec $ do
             statusIs 200
             (requireJSONResponse :: YesodExample site [Text]) `liftedShouldThrow` (\(e :: SomeException) -> True)
 
+    -- See: https://github.com/yesodweb/yesod/issues/1846
+    describe "addPostParam" $ yesodSpec defaultRoutedApp $ do
+        yit "ensures parameters are applied in the right order" $ do
+            get TupleR
+ 
+            request $ do
+              addToken
+              setUrl TupleR
+              setMethod "POST"
+              addPostParam "data" "ABC"
+              addPostParam "data" "100"
+ 
+            statusIs 400
+ 
+            get TupleR
+ 
+            request $ do
+              setUrl TupleR
+              addToken
+              setMethod "POST"
+              addPostParam "data" "100"
+              addPostParam "data" "ABC"
+ 
+            statusIs 200
+
 instance RenderMessage LiteApp FormMessage where
+    renderMessage _ _ = defaultFormMessage
+
+instance RenderMessage RoutedApp FormMessage where
     renderMessage _ _ = defaultFormMessage
 
 app :: LiteApp
@@ -776,6 +807,40 @@ getIntegerR = do
     app <- getYesod
     pure $ T.pack $ show (routedAppInteger app)
 
+tupleField = Field parse view UrlEncoded
+  where
+  parse rawVals@[someNumber, someText] _fileVals =  
+    case readMaybe (T.unpack someNumber) :: Maybe Int of
+      Nothing -> pure $ Left "The first element is not Int"
+      Just n -> pure $ Right $ Just (n, someText)
+  parse rawVals _ = pure $ Left "The number of elements in the first argument of the parse is not equal to two"
+
+  view theId name attrs _eVal isReq =
+    [whamlet|
+      <input name=#{name}>
+      <input name=#{name}>
+    |]
+
+tupleForm :: Html -> MForm Handler (FormResult (Int, Text), Widget)
+tupleForm = renderDivs $ areq tupleField "" { fsName = Just "data" } Nothing
+
+getTupleR :: Handler Html
+getTupleR = do
+    ((_, widget), enctype) <- runFormPost tupleForm
+    defaultLayout
+        [whamlet|
+            <form method=post action=@{TupleR} enctype=#{enctype}>
+                ^{widget}
+                <button>Submit
+        |]
+
+postTupleR :: Handler Html
+postTupleR = do
+    ((result, widget), enctype) <- runFormPost tupleForm
+    case result of
+        FormSuccess tupleValue -> defaultLayout [whamlet|<p>#{show tupleValue}|]
+        FormFailure errors -> invalidArgs errors
+        FormMissing -> error "Tuple form is missing"
 
 -- infix Copied from HSpec's version
 infix 1 `liftedShouldThrow`
